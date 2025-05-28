@@ -70,15 +70,15 @@ Significant performance improvements can be achieved through parameter optimizat
 
 #### Deconvolution Parameters (`repeat` and `sm_step`)
 
-| Configuration | repeat | sm_step | Runtime | Speedup | Max Error | Status |
-|---------------|--------|---------|---------|---------|-----------|---------|
-| **Original** | 20 | 0.005 | Baseline | 1.0x | 0% | Reference |
-| **Conservative** | 15 | 0.007 | ~67% | 1.47x | 0.22% | ✅ Safe |
-| **Optimized** | 10 | 0.01 | ~49% | 2.05x | 0.48% | ✅ **Recommended** |
+| Configuration | repeat | sm_step | Runtime | Speedup | Max Difference (mag) | Status |
+|---------------|--------|---------|---------|---------|---------------------|---------|
+| **Original** | 20 | 0.005 | Baseline | 1.0x | 0.000 | Reference |
+| **Conservative** | 15 | 0.007 | ~67% | 1.47x | 0.04 | ✅ Safe |
+| **Optimized** | 10 | 0.01 | ~49% | 2.05x | 0.12 | ✅ **Recommended** |
 
 **Key findings:**
 - Deconvolution accounts for 80-90% of total runtime in parameter space sampling
-- 2x speedup achievable with negligible scientific impact (0.48% error)
+- 2x speedup achievable with negligible scientific impact (0.12 mag error)
 - Random scatter effects (~2.0 mag) are 17x larger than systematic deconvolution errors
 
 #### Interpolation Grid Resolution (`nbin`)
