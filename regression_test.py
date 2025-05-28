@@ -16,9 +16,10 @@ Usage:
 
 import numpy as np
 import argparse
+import time
 from AbundanceMatching import AbundanceFunction, LF_SCATTER_MULT, calc_number_densities, add_scatter, rematch
 
-def create_test_data():
+def create_test_data(n_halos=10000):
     """Create the same test data as test_readme.py"""
     # Same luminosity function data
     _lf_table = '''
@@ -64,7 +65,6 @@ def create_test_data():
     
     # Same mock halo data (reproducible with same seed)
     np.random.seed(42)
-    n_halos = 50
     vpeak_values = np.random.lognormal(mean=np.log(200), sigma=0.8, size=n_halos)
     vpeak_values = np.clip(vpeak_values, 50, 1500)
     halos = np.array([(v,) for v in vpeak_values], dtype=[('vpeak', 'f8')])
@@ -96,8 +96,12 @@ def run_abundance_matching(lf, halos, box_size=100, scatter=0.2, show_plots=Fals
         ax1.grid(True, alpha=0.3)
     
     # Deconvolute
+    print("  Running deconvolution...")
+    start_time = time.time()
     remainder = af.deconvolute(scatter*LF_SCATTER_MULT, 20)
-    
+    deconv_time = time.time() - start_time
+    print(f"    Completed in {deconv_time:.3f} seconds")
+
     if show_plots:
         # Plot 2: Deconvolution quality check
         x, nd = af.get_number_density_table()
@@ -116,9 +120,23 @@ def run_abundance_matching(lf, halos, box_size=100, scatter=0.2, show_plots=Fals
     nd_halos = calc_number_densities(halos['vpeak'], box_size)
     
     # Do abundance matching
+    print("  Running abundance matching (no scatter)...")
+    start_time = time.time()
     catalog = af.match(nd_halos)
+    no_scatter_time = time.time() - start_time
+    print(f"    Completed in {no_scatter_time:.3f} seconds")
+    
+    print("  Running abundance matching (with scatter)...")
+    start_time = time.time()
     catalog_sc = af.match(nd_halos, scatter*LF_SCATTER_MULT)
+    scatter_time = time.time() - start_time
+    print(f"    Completed in {scatter_time:.3f} seconds")
+    
+    print("  Running abundance matching (deconvolved)...")
+    start_time = time.time()
     catalog_deconv = af.match(nd_halos, scatter*LF_SCATTER_MULT, False)
+    deconv_time = time.time() - start_time
+    print(f"    Completed in {deconv_time:.3f} seconds")
     
     return {
         'halos_vpeak': halos['vpeak'],
@@ -234,11 +252,13 @@ def main():
                        help='Numerical tolerance for comparison (default: 1e-10)')
     parser.add_argument('--reference-file', default='reference_catalog.npz',
                        help='Reference catalog file (default: reference_catalog.npz)')
+    parser.add_argument('--n-halos', type=int, default=10000,
+                       help='Number of mock halos to generate (default: 10000)')
     
     args = parser.parse_args()
     
     print("Creating test data...")
-    lf, halos = create_test_data()
+    lf, halos = create_test_data(args.n_halos)
     
     print("Running abundance matching...")
     results = run_abundance_matching(lf, halos, show_plots=args.plot)
