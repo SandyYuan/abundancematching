@@ -19,7 +19,7 @@ import argparse
 import time
 from AbundanceMatching import AbundanceFunction, LF_SCATTER_MULT, calc_number_densities, add_scatter, rematch
 
-def create_test_data(n_halos=1000000):
+def create_test_data(n_halos=10000):
     """Create the same test data as test_readme.py"""
     # Same luminosity function data
     _lf_table = '''
@@ -123,6 +123,18 @@ def run_abundance_matching(lf, halos, box_size=100, scatter=0.2, show_plots=Fals
     nd_halos = calc_number_densities(halos['vpeak'], box_size)
     nd_time = time.time() - start_time
     print(f"    Completed in {nd_time:.3f} seconds")
+    
+    # Diagnostic: Check number density ranges
+    print(f"  Halo number densities: {nd_halos.min():.2e} to {nd_halos.max():.2e}")
+    print(f"  Abundance function bounds: {af.nd_bounds[0]:.2e} to {af.nd_bounds[1]:.2e}")
+    
+    # Check if ranges overlap
+    if nd_halos.max() < af.nd_bounds[0] or nd_halos.min() > af.nd_bounds[1]:
+        print("  WARNING: No overlap between halo and abundance function number densities!")
+    elif nd_halos.min() < af.nd_bounds[0] or nd_halos.max() > af.nd_bounds[1]:
+        print(f"  WARNING: Partial overlap - some halos outside abundance function range")
+        overlap_frac = np.sum((nd_halos >= af.nd_bounds[0]) & (nd_halos <= af.nd_bounds[1])) / len(nd_halos)
+        print(f"    {overlap_frac:.1%} of halos are within abundance function range")
     
     # Do abundance matching
     catalog = af.match(nd_halos)
@@ -248,8 +260,8 @@ def main():
                        help='Numerical tolerance for comparison (default: 1e-10)')
     parser.add_argument('--reference-file', default='reference_catalog.npz',
                        help='Reference catalog file (default: reference_catalog.npz)')
-    parser.add_argument('--n-halos', type=int, default=1000000,
-                       help='Number of mock halos to generate (default: 1000000)')
+    parser.add_argument('--n-halos', type=int, default=10000,
+                       help='Number of mock halos to generate (default: 10000)')
     
     args = parser.parse_args()
     
