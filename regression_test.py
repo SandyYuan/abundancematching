@@ -19,7 +19,7 @@ import argparse
 import time
 from AbundanceMatching import AbundanceFunction, LF_SCATTER_MULT, calc_number_densities, add_scatter, rematch
 
-def create_test_data(n_halos=10000):
+def create_test_data(n_halos=1000000):
     """Create the same test data as test_readme.py"""
     # Same luminosity function data
     _lf_table = '''
@@ -75,7 +75,7 @@ def create_test_data(n_halos=10000):
     
     return _lf, halos
 
-def run_abundance_matching(lf, halos, box_size=100, scatter=0.2, show_plots=False):
+def run_abundance_matching(lf, halos, box_size=400, scatter=0.2, show_plots=False):
     """Run the abundance matching workflow with optional plotting"""
     # Create abundance function
 
@@ -135,6 +135,17 @@ def run_abundance_matching(lf, halos, box_size=100, scatter=0.2, show_plots=Fals
         print(f"  WARNING: Partial overlap - some halos outside abundance function range")
         overlap_frac = np.sum((nd_halos >= af.nd_bounds[0]) & (nd_halos <= af.nd_bounds[1])) / len(nd_halos)
         print(f"    {overlap_frac:.1%} of halos are within abundance function range")
+        
+        # Auto-adjust box size if most halos are too high density
+        if nd_halos.max() > af.nd_bounds[1]:
+            # Calculate required box size to bring max density within bounds
+            required_box_size = box_size * (nd_halos.max() / af.nd_bounds[1])**(1/3)
+            print(f"  Adjusting box size from {box_size} to {required_box_size:.1f} Mpc/h to fix range mismatch")
+            
+            # Recalculate number densities with new box size
+            nd_halos = calc_number_densities(halos['vpeak'], required_box_size)
+            box_size = required_box_size
+            print(f"  New halo number densities: {nd_halos.min():.2e} to {nd_halos.max():.2e}")
     
     # Do abundance matching
     catalog = af.match(nd_halos)
@@ -260,8 +271,8 @@ def main():
                        help='Numerical tolerance for comparison (default: 1e-10)')
     parser.add_argument('--reference-file', default='reference_catalog.npz',
                        help='Reference catalog file (default: reference_catalog.npz)')
-    parser.add_argument('--n-halos', type=int, default=10000,
-                       help='Number of mock halos to generate (default: 10000)')
+    parser.add_argument('--n-halos', type=int, default=1000000,
+                       help='Number of mock halos to generate (default: 1000000)')
     
     args = parser.parse_args()
     
