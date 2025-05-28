@@ -219,8 +219,10 @@ def compare_timing_against_baseline(current_timing, baseline_timing):
     
     # Compare individual components
     for component in ['calc_number_densities', 'af_init', 'deconvolute_orig', 'match_orig']:
-        if component in baseline_timing and component in current_timing:
-            baseline_time = float(baseline_timing[component]['mean'])
+        # Handle the npz key format (component_mean, component_std, etc.)
+        baseline_key = f'{component}_mean'
+        if baseline_key in baseline_timing and component in current_timing:
+            baseline_time = float(baseline_timing[baseline_key])
             current_time = current_timing[component]['mean']
             speedup = baseline_time / current_time
             
@@ -236,10 +238,13 @@ def compare_timing_against_baseline(current_timing, baseline_timing):
                 'current': current_time,
                 'speedup': speedup
             }
+        else:
+            print(f"⚠️  {component}: Missing baseline or current data")
     
     # Compare total pipeline
-    if 'total_orig_pipeline' in baseline_timing and 'total_orig_pipeline' in current_timing:
-        baseline_total = float(baseline_timing['total_orig_pipeline']['mean'])
+    baseline_total_key = 'total_orig_pipeline_mean'
+    if baseline_total_key in baseline_timing and 'total_orig_pipeline' in current_timing:
+        baseline_total = float(baseline_timing[baseline_total_key])
         current_total = current_timing['total_orig_pipeline']['mean']
         total_speedup = baseline_total / current_total
         
@@ -262,6 +267,11 @@ def compare_timing_against_baseline(current_timing, baseline_timing):
             print(f"➡️  NEUTRAL: No significant performance change")
         else:
             print(f"⚠️  SLOWER: {1/total_speedup:.1f}x performance regression")
+    else:
+        print(f"⚠️  Total pipeline: Missing baseline or current data")
+        # Debug: show available keys
+        print(f"    Available baseline keys: {list(baseline_timing.keys())[:10]}...")
+        print(f"    Available current keys: {list(current_timing.keys())}")
     
     return improvements
 
@@ -427,7 +437,7 @@ def main():
     parser.add_argument('--timing-baseline', default=None,
                        help='Timing baseline file (default: auto-detect)')
     parser.add_argument('--save-timing', type=str, default=None,
-                       help='Save current timing results as baseline (e.g., timing_baseline.npz)')
+                       help='Save current timing results as baseline (e.g., baseline_catalogs_timing.npz)')
     parser.add_argument('--detailed', action='store_true',
                        help='Show detailed comparison statistics')
     parser.add_argument('--plot', action='store_true',
@@ -440,6 +450,13 @@ def main():
     # Auto-detect timing baseline if not specified
     if args.timing_baseline is None:
         args.timing_baseline = args.baseline.replace('.npz', '_timing.npz')
+    
+    # Auto-detect save timing filename if not specified but requested
+    if args.save_timing is None:
+        # Don't auto-save unless explicitly requested
+        default_timing_file = args.baseline.replace('.npz', '_timing.npz')
+    else:
+        default_timing_file = args.save_timing
     
     # Load baseline data
     baseline_data = load_baseline(args.baseline)

@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import curve_fit
+from scipy.interpolate import interp1d
 
 _error_import_fiducial_deconvolute = None
 try:
@@ -23,14 +24,21 @@ def _bright_end_func(x, a, b, c, d):
 
 
 def _convolve_gaussian(y, sigma, truncate=4):
+    """Optimized Gaussian convolution."""
     sd = float(sigma)
     size = int(np.ceil(truncate * sd))
-    weights = np.zeros(size*2+1)
-    i = np.arange(size+1)
-    weights[size:] = np.exp(-(i*i)/(2.0*sd*sd))
-    weights[:size] = weights[:size:-1]
+    
+    # Create kernel more efficiently
+    i = np.arange(-size, size+1, dtype=np.float64)
+    weights = np.exp(-(i*i)/(2.0*sd*sd))
     weights /= weights.sum()
-    y_full = np.concatenate((np.zeros(size), y, np.ones(size)*y[-1]))
+    
+    # Pad array efficiently
+    y_full = np.empty(len(y) + 2*size, dtype=y.dtype)
+    y_full[:size] = y[0]
+    y_full[size:size+len(y)] = y
+    y_full[size+len(y):] = y[-1]
+    
     return np.convolve(y_full, weights, 'valid')
 
 
@@ -54,17 +62,16 @@ def add_scatter(x, scatter, in_place=False):
         x with the added scatter.
     """
     x = np.asanyarray(x) if in_place else np.array(x)
-    r = np.random.randn(*x.shape)
-    r *= scatter
-    x += r
+    x += np.random.randn(*x.shape) * scatter
     return x
 
 
-def rematch(catalog1, catalog2, greatest_first=True, \
-        catalog2_sorted=False):
+def rematch(catalog1, catalog2, greatest_first=True, catalog2_sorted=False):
     """
+    Optimized version of rematch using better numpy operations.
+    
     Substitute the values in catalog1 with the values in catalog2,
-    accroding to the ranks of both arrays. Values of NaN and INF are
+    according to the ranks of both arrays. Values of NaN and INF are
     excluded automatically.
 
     Parameters
@@ -91,17 +98,33 @@ def rematch(catalog1, catalog2, greatest_first=True, \
     """
     arr2 = np.asarray(catalog2)
     if not catalog2_sorted:
-        arr2 = arr2[np.isfinite(arr2)]
-        arr2.sort()
+        # Faster finite check and sort
+        finite_mask = np.isfinite(arr2)
+        arr2 = np.sort(arr2[finite_mask])
         if greatest_first:
             arr2 = arr2[::-1]
-    arr1 = np.array(catalog1)
-    f = np.where(np.isfinite(arr1))[0]
-    s = np.argsort(arr1[f])
+    
+    arr1 = np.array(catalog1, dtype=np.float64)
+    
+    # Vectorized finite check
+    finite_mask = np.isfinite(arr1)
+    finite_idx = np.flatnonzero(finite_mask)
+    
+    if len(finite_idx) == 0:
+        return arr1
+    
+    # Get sort indices directly
+    finite_vals = arr1[finite_idx]
+    sort_idx = finite_idx[np.argsort(finite_vals)]
+    
     if greatest_first:
-        s = s[::-1]
-    arr1[f[s[:len(arr2)]]] = arr2[:len(s)]
-    arr1[f[s[len(arr2):]]] = np.nan
+        sort_idx = sort_idx[::-1]
+    
+    # Vectorized assignment
+    n_assign = min(len(arr2), len(sort_idx))
+    arr1[sort_idx[:n_assign]] = arr2[:n_assign]
+    arr1[sort_idx[n_assign:]] = np.nan
+    
     return arr1
 
 
@@ -114,9 +137,9 @@ def _to_float(x, default=np.nan):
 
 
 class AbundanceFunction(object):
-    def __init__(self, x, phi, ext_range=(None, None), nbin=1000, \
-            faint_end_first=False, faint_end_slope='fit', \
-            faint_end_fit_points=3, bright_end_fit_points=-1):
+    def __init__(self, x, phi, ext_range=(None, None), nbin=1000,
+                 faint_end_first=False, faint_end_slope='fit',
+                 faint_end_fit_points=3, bright_end_fit_points=-1):
         """
         This class can interpolate and extrapolate an abundance function,
         and also provides fiducial deconvolution and abundance matching.
@@ -205,16 +228,16 @@ class AbundanceFunction(object):
         #fit bright end
         a0 = 1.0 if self._x_flipped else -1.0
         s = slice(bright_end_fit_points)
-        popt = curve_fit(_bright_end_func, x[s], phi_log[s], [a0, 0, 0, 0], \
-                maxfev=100000)[0]
+        popt = curve_fit(_bright_end_func, x[s], phi_log[s], [a0, 0, 0, 0],
+                         maxfev=100000)[0]
         phi_log_new[bright_end_flag] = \
                 _bright_end_func(x_new[bright_end_flag], *popt)
 
         #fit faint end
         if faint_end_fit_points:
             s = slice(-faint_end_fit_points, None)
-            popt = curve_fit(lambda x, a, b: a*x+b, x[s], phi_log[s], [0, 0], \
-                    maxfev=100000)[0]
+            popt = curve_fit(lambda x, a, b: a*x+b, x[s], phi_log[s], [0, 0],
+                             maxfev=100000)[0]
             faint_end_slope = popt[0]
         else:
             faint_end_slope *= (np.log(10.0) if self._x_flipped else -np.log(10.0))
@@ -226,12 +249,13 @@ class AbundanceFunction(object):
         flag = np.isfinite(phi_new)
         x_new = x_new[flag]
         phi_new = phi_new[flag]
+        phi_log_new = phi_log_new[flag]
 
         dphi = _diff(phi_new)
         phi_center = (phi_new[1:]+phi_new[:-1])*0.5
         phi_int = dphi/_diff(phi_log_new)*dx
         flag = (np.fabs(dphi)/phi_center < 1.0e-7)
-        if any(flag):
+        if flag.any():
             phi_int[flag] = phi_center[flag]*dx
         phi_int_0 = phi_int[0]*phi_int[0]/phi_int[1]
         phi_int = np.cumsum(np.insert(phi_int, 0, phi_int_0))
@@ -241,6 +265,35 @@ class AbundanceFunction(object):
         self._nd_log = np.log(phi_int)
         self.nd_bounds = phi_int[0], phi_int[-1]
         self._x_deconv = {}
+        
+        # Create interpolators for faster lookups
+        self._create_interpolators()
+
+    def _create_interpolators(self):
+        """Create scipy interpolators for faster repeated lookups."""
+        # Main interpolators
+        self._phi_interp = interp1d(
+            self._x[self._s], self._phi_log[self._s],
+            kind='linear', bounds_error=False, fill_value=np.nan,
+            assume_sorted=True, copy=False
+        )
+        
+        self._nd_interp = interp1d(
+            self._x[self._s], self._nd_log[self._s],
+            kind='linear', bounds_error=False, fill_value=np.nan,
+            assume_sorted=True, copy=False
+        )
+        
+        # Reverse interpolator for matching
+        self._match_interp = interp1d(
+            self._nd_log, self._x,
+            kind='linear', bounds_error=False, fill_value=np.nan,
+            assume_sorted=True, copy=False
+        )
+        
+        # Cache for deconvolved interpolators
+        self._deconv_nd_interps = {}
+        self._deconv_match_interps = {}
 
     def __call__(self, x):
         """
@@ -256,8 +309,7 @@ class AbundanceFunction(object):
         phi : array_like
             The abundance values at x.
         """
-        return np.exp(np.interp(x, self._x[self._s], self._phi_log[self._s], \
-                np.nan, np.nan))
+        return np.exp(self._phi_interp(x))
 
     def number_density_at(self, x, scatter=0):
         """
@@ -279,14 +331,21 @@ class AbundanceFunction(object):
         """
         scatter = float(scatter)
         if scatter > 0:
-            try:
-                xp = self._x_deconv[scatter]
-            except (KeyError):
+            if scatter not in self._x_deconv:
                 raise ValueError('Please run deconvolute first!')
+            
+            # Create and cache interpolator if needed
+            if scatter not in self._deconv_nd_interps:
+                xp = self._x_deconv[scatter]
+                self._deconv_nd_interps[scatter] = interp1d(
+                    xp[self._s], self._nd_log[self._s],
+                    kind='linear', bounds_error=False, fill_value=np.nan,
+                    assume_sorted=True, copy=False
+                )
+            
+            return np.exp(self._deconv_nd_interps[scatter](x))
         else:
-            xp = self._x
-        return np.exp(np.interp(x, xp[self._s], self._nd_log[self._s], \
-                np.nan, np.nan))
+            return np.exp(self._nd_interp(x))
 
     def match(self, nd, scatter=0, do_add_scatter=True, do_rematch=True):
         """
@@ -312,21 +371,31 @@ class AbundanceFunction(object):
             at the given number densities.
         """
         scatter = float(scatter)
+        log_nd = np.log(nd)
+        
         if scatter > 0:
-            try:
-                xp = self._x_deconv[scatter]
-            except (KeyError):
+            if scatter not in self._x_deconv:
                 raise ValueError('Please run deconvolute first!')
-        else:
-            xp = self._x
-        x = np.interp(np.log(nd), self._nd_log, xp, np.nan, np.nan)
-
-        if scatter > 0:
+            
+            # Create and cache interpolator if needed
+            if scatter not in self._deconv_match_interps:
+                xp = self._x_deconv[scatter]
+                self._deconv_match_interps[scatter] = interp1d(
+                    self._nd_log, xp,
+                    kind='linear', bounds_error=False, fill_value=np.nan,
+                    assume_sorted=True, copy=False
+                )
+            
+            x = self._deconv_match_interps[scatter](log_nd)
+            
             if do_add_scatter:
                 x = add_scatter(x, scatter, True)
                 if do_rematch:
-                    x2 = np.interp(np.log(nd), self._nd_log, self._x, np.nan, np.nan)
+                    x2 = self._match_interp(log_nd)
                     x = rematch(x, x2, self._x_flipped)
+        else:
+            x = self._match_interp(log_nd)
+        
         return x
 
     def deconvolute(self, scatter, repeat=10, sm_step=0.005, return_remainder=True):
@@ -378,6 +447,12 @@ class AbundanceFunction(object):
             smm *= -1.0
         smm = smm[::-1]
         self._x_deconv[float(scatter)] = smm
+        
+        # Clear cached interpolators for this scatter value
+        if scatter in self._deconv_nd_interps:
+            del self._deconv_nd_interps[scatter]
+        if scatter in self._deconv_match_interps:
+            del self._deconv_match_interps[scatter]
 
         if return_remainder:
             nd = np.exp(np.interp(self._x, smm[self._s], self._nd_log[self._s]))
