@@ -102,14 +102,14 @@ def run_current_code_with_timing(baseline_data):
     
     # Benchmark 2: AbundanceFunction initialization
     print("⏱️  Benchmarking AbundanceFunction.__init__()...")
-    af_orig, init_timing = benchmark_function(AbundanceFunction, lf[:,0], lf[:,1], (-27, -5))
+    af_orig, init_timing = benchmark_function(AbundanceFunction, lf[:,0], lf[:,1], (-27, -5), 250)
     timing_results['af_init'] = init_timing
     print(f"    Time: {init_timing['mean']:.6f} ± {init_timing['std']:.6f} seconds")
     
     # Benchmark 3: Deconvolution (original parameters)
     print("⏱️  Benchmarking af.deconvolute() [original params]...")
     def deconv_orig():
-        af = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5))
+        af = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5), 250)
         return af.deconvolute(scatter*LF_SCATTER_MULT, 20)
     
     remainder_orig, deconv_orig_timing = benchmark_function(deconv_orig)
@@ -119,7 +119,7 @@ def run_current_code_with_timing(baseline_data):
     # Benchmark 4: Deconvolution (optimized parameters)  
     print("⏱️  Benchmarking af.deconvolute() [optimized params]...")
     def deconv_opt():
-        af = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5))
+        af = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5), 250)
         return af.deconvolute(scatter*LF_SCATTER_MULT, repeat=10, sm_step=0.01)
     
     remainder_opt, deconv_opt_timing = benchmark_function(deconv_opt)
@@ -129,7 +129,7 @@ def run_current_code_with_timing(baseline_data):
     
     # Benchmark 5: Matching (original)
     print("⏱️  Benchmarking af.match() [original]...")
-    af_orig = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5))
+    af_orig = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5), 250)
     af_orig.deconvolute(scatter*LF_SCATTER_MULT, 20)
     
     def match_orig():
@@ -144,7 +144,7 @@ def run_current_code_with_timing(baseline_data):
     
     # Benchmark 6: Matching (optimized)
     print("⏱️  Benchmarking af.match() [optimized]...")
-    af_opt = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5))
+    af_opt = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5), 250)
     af_opt.deconvolute(scatter*LF_SCATTER_MULT, repeat=10, sm_step=0.01)
     
     def match_opt():
@@ -159,7 +159,7 @@ def run_current_code_with_timing(baseline_data):
     
     # Benchmark 7: Deterministic matching
     print("⏱️  Benchmarking af.match() [deterministic]...")
-    af_det = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5))
+    af_det = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5), 250)
     af_det.deconvolute(scatter*LF_SCATTER_MULT, 20)
     
     def match_det():
