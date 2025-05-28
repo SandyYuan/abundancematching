@@ -417,6 +417,7 @@ def run_parameter_comparison(lf, halos, box_size=400, scatter=0.2, alpha=0.5, sh
         'catalog_cons': catalog_cons,
         'catalog_det_orig': catalog_det_orig,
         'catalog_det_opt': catalog_det_opt,
+        'nd_halos': nd_halos_orig,
         'max_abs_diff_orig': catalog_diff_orig.max(),
         'max_abs_diff_cons': catalog_diff_cons.max(),
         'max_abs_diff_det': catalog_diff_det.max(),
@@ -450,6 +451,8 @@ def main():
                        help='Alpha value to test (default: 0.5)')
     parser.add_argument('--box-size', type=float, default=400,
                        help='Box size in Mpc/h (default: 400)')
+    parser.add_argument('--save-reference', type=str, default=None,
+                       help='Save catalog results to .npz file for baseline reference (e.g., baseline_catalogs.npz)')
     
     args = parser.parse_args()
     
@@ -474,6 +477,77 @@ def main():
     print(f"PURE DECONVOLUTION EFFECTS (systematic error):")
     print(f"Max relative accuracy loss (deterministic): {results['max_rel_diff_det']:.2e}")
     print(f"Recommendation: {results['recommendation']}")
+    
+    # Save reference catalogs if requested
+    if args.save_reference:
+        print(f"\nSaving reference catalogs to {args.save_reference}...")
+        
+        # Prepare metadata
+        metadata = {
+            'n_halos': args.n_halos,
+            'scatter': args.scatter,
+            'alpha': args.alpha,
+            'box_size': args.box_size,
+            'LF_SCATTER_MULT': LF_SCATTER_MULT,
+            'random_seed': 12345,  # The fixed seed we used
+            'speedup_orig': results['speedup_orig'],
+            'speedup_cons': results['speedup_cons'],
+            'max_rel_diff_det': results['max_rel_diff_det'],
+            'recommendation': results['recommendation']
+        }
+        
+        # Save all catalog arrays and key results
+        np.savez_compressed(args.save_reference,
+            # Input data
+            vpeak_values=halos['vpeak'],
+            lf_mags=lf[:,0],
+            lf_phi=lf[:,1],
+            
+            # Catalog results (with scatter, same random seed)
+            catalog_orig=results['catalog_orig'],
+            catalog_opt=results['catalog_opt'], 
+            catalog_cons=results['catalog_cons'],
+            
+            # Deterministic catalog results (no scatter)
+            catalog_det_orig=results['catalog_det_orig'],
+            catalog_det_opt=results['catalog_det_opt'],
+            
+            # Number densities
+            nd_halos=results['nd_halos'],
+            
+            # Remainder arrays
+            remainder_orig=results['remainder_orig'],
+            remainder_opt=results['remainder_opt'],
+            remainder_cons=results['remainder_cons'],
+            
+            # Runtime measurements
+            time_orig=results['time_orig'],
+            time_opt=results['time_opt'], 
+            time_cons=results['time_cons'],
+            
+            # Accuracy metrics
+            max_abs_diff_det=results['max_abs_diff_det'],
+            max_rel_diff_det=results['max_rel_diff_det'],
+            mean_abs_diff_det=results['mean_abs_diff_det'],
+            mean_rel_diff_det=results['mean_rel_diff_det'],
+            
+            # Statistical test results
+            ks_pvalue_det=results['ks_pvalue_det'],
+            
+            # Metadata (as arrays for npz compatibility)
+            **{f'meta_{k}': np.array(v) for k, v in metadata.items()}
+        )
+        
+        print(f"Reference catalogs saved successfully!")
+        print(f"Contents saved:")
+        print(f"  - Input halo catalog ({len(halos)} halos)")
+        print(f"  - Luminosity function data")
+        print(f"  - Catalog results for all 3 parameter sets (with scatter)")
+        print(f"  - Deterministic catalog results (no scatter)")
+        print(f"  - Runtime and accuracy metrics")
+        print(f"  - All metadata (parameters, random seed, etc.)")
+        print(f"\nTo load later: data = np.load('{args.save_reference}')")
+        print(f"Access arrays like: data['catalog_orig'], data['catalog_det_opt'], etc.")
 
 if __name__ == '__main__':
     main() 
