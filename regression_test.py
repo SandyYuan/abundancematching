@@ -19,7 +19,7 @@ import argparse
 import time
 from AbundanceMatching import AbundanceFunction, LF_SCATTER_MULT, calc_number_densities, add_scatter, rematch
 
-def create_test_data(n_halos=10000):
+def create_test_data(n_halos=1000000):
     """Create the same test data as test_readme.py"""
     # Same luminosity function data
     _lf_table = '''
@@ -78,8 +78,9 @@ def create_test_data(n_halos=10000):
 def run_abundance_matching(lf, halos, box_size=100, scatter=0.2, show_plots=False):
     """Run the abundance matching workflow with optional plotting"""
     # Create abundance function
+
     af = AbundanceFunction(lf[:,0], lf[:,1], (-27, -5))
-    
+
     if show_plots:
         import matplotlib.pyplot as plt
         # Create subplots for better visualization
@@ -117,21 +118,16 @@ def run_abundance_matching(lf, halos, box_size=100, scatter=0.2, show_plots=Fals
         plt.show()
     
     # Get number densities
+    print("  Calculating number densities (includes sorting)...")
+    start_time = time.time()
     nd_halos = calc_number_densities(halos['vpeak'], box_size)
+    nd_time = time.time() - start_time
+    print(f"    Completed in {nd_time:.3f} seconds")
     
     # Do abundance matching
-    print("  Running abundance matching (no scatter)...")
-    start_time = time.time()
     catalog = af.match(nd_halos)
-    no_scatter_time = time.time() - start_time
-    print(f"    Completed in {no_scatter_time:.3f} seconds")
-    
-    print("  Running abundance matching (with scatter)...")
-    start_time = time.time()
     catalog_sc = af.match(nd_halos, scatter*LF_SCATTER_MULT)
-    scatter_time = time.time() - start_time
-    print(f"    Completed in {scatter_time:.3f} seconds")
-    
+
     print("  Running abundance matching (deconvolved)...")
     start_time = time.time()
     catalog_deconv = af.match(nd_halos, scatter*LF_SCATTER_MULT, False)
@@ -252,8 +248,8 @@ def main():
                        help='Numerical tolerance for comparison (default: 1e-10)')
     parser.add_argument('--reference-file', default='reference_catalog.npz',
                        help='Reference catalog file (default: reference_catalog.npz)')
-    parser.add_argument('--n-halos', type=int, default=10000,
-                       help='Number of mock halos to generate (default: 10000)')
+    parser.add_argument('--n-halos', type=int, default=1000000,
+                       help='Number of mock halos to generate (default: 1000000)')
     
     args = parser.parse_args()
     
